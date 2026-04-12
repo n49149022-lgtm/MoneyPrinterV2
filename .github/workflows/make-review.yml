@@ -24,27 +24,34 @@ jobs:
       - name: Установить FFmpeg и библиотеки
         run: |
           sudo apt update && sudo apt install -y ffmpeg
-          pip install moviepy gtts
+          pip install moviepy gtts pillow
 
       - name: Скачать фото и сгенерировать видео
         run: |
           python - <<EOF
           import urllib.request
+          from PIL import Image
           from moviepy import *
           from gtts import gTTS
+          import numpy as np
 
           # Скачать фото
           urllib.request.urlretrieve("${{ github.event.inputs.photo_url }}", "photo.jpg")
+
+          # Конвертировать фото в формат, понятный moviepy
+          img = Image.open("photo.jpg")
+          img = img.convert("RGB")
+          img.save("photo_converted.jpg")
 
           # Сделать озвучку
           tts = gTTS("${{ github.event.inputs.review_text }}", lang='ru')
           tts.save("voice.mp3")
 
           # Создать вертикальное видео
-          clip = ImageClip("photo.jpg").resized(height=1920).with_duration(30)
+          clip = ImageClip("photo_converted.jpg").resized(height=1920).with_duration(30)
           audio_clip = AudioFileClip("voice.mp3").with_duration(clip.duration)
 
-          # Добавить название товара (шрифт LiberationSans)
+          # Добавить название товара
           txt = TextClip(
               text="${{ github.event.inputs.product_name }}",
               font_size=70,
