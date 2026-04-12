@@ -1,0 +1,64 @@
+name: Сделать обзор товара
+on:
+  workflow_dispatch:
+    inputs:
+      product_name:
+        description: 'Название товара'
+        required: true
+      review_text:
+        description: 'Текст обзора (2-3 предложения)'
+        required: true
+      photo_url:
+        description: 'Ссылка на фото товара'
+        required: true
+
+jobs:
+  make_review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Установить FFmpeg и библиотеки
+        run: |
+          sudo apt update && sudo apt install -y ffmpeg
+          pip install moviepy gtts
+
+      - name: Скачать фото и сгенерировать видео
+        run: |
+          python - <<EOF
+          import urllib.request
+          from moviepy import *
+          from gtts import gTTS
+
+          # Скачать фото
+          urllib.request.urlretrieve("${{ github.event.inputs.photo_url }}", "photo.jpg")
+
+          # Сделать озвучку
+          tts = gTTS("${{ github.event.inputs.review_text }}", lang='ru')
+          tts.save("voice.mp3")
+
+          # Создать вертикальное видео
+          clip = ImageClip("photo.jpg").resized(height=1920).with_duration(30)
+          audio_clip = AudioFileClip("voice.mp3").with_duration(clip.duration)
+
+          # Добавить название товара
+          txt = TextClip(
+              text="${{ github.event.inputs.product_name }}",
+              font_size=70,
+              color='white',
+              font='Arial'
+          ).with_duration(30).with_position(('center', 'center'))
+
+          # Склеить и сохранить
+          final = CompositeVideoClip([clip, txt]).with_audio(audio_clip)
+          final.write_videofile("review.mp4", fps=24)
+          EOF
+
+      - name: Загрузить видео
+        uses: actions/upload-artifact@v4
+        with:
+          name: product-review
+          path: review.mp4
