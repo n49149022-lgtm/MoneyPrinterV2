@@ -44,12 +44,12 @@ jobs:
           clip = ImageClip("photo.jpg").resized(height=1920).with_duration(30)
           audio_clip = AudioFileClip("voice.mp3").with_duration(clip.duration)
 
-          # Добавить название товара
+          # Добавить название товара (шрифт LiberationSans)
           txt = TextClip(
               text="${{ github.event.inputs.product_name }}",
               font_size=70,
               color='white',
-              font='Arial'
+              font='/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf'
           ).with_duration(30).with_position(('center', 'center'))
 
           # Склеить и сохранить
