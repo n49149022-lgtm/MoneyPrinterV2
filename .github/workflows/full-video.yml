@@ -1,4 +1,4 @@
-name:  Full Vertical Video (Stocks + Voice + Subtitles)
+name: 🎬 Full Vertical Video (Stocks + Voice + Subtitles)
 
 on:
   workflow_dispatch:
@@ -17,12 +17,15 @@ on:
           - ru-RU-SvetlanaNeural
           - en-US-JennyNeural
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   create-full-video:
     runs-on: ubuntu-latest
     steps:
       - name: 📦 Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: 🐍 Setup Python
         uses: actions/setup-python@v5
@@ -33,7 +36,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg imagemagick
-          pip install requests "moviepy==1.0.3" edge-tts Pillow
+          pip install requests "moviepy==1.0.3" "Pillow==9.5.0" edge-tts
 
       - name: 🎬 Generate full video
         env:
@@ -51,7 +54,7 @@ jobs:
           PEXELS_KEY = os.environ['PEXELS_KEY']
 
           # 1. Script
-          script = f"{TOPIC}. No internet required. Zero RAM when idle. Complete privacy. Free for 48 hours. Get it now."
+          script = f"{TOPIC}. No internet. Zero RAM. Full privacy. Free 48 hours."
 
           # 2. TTS
           async def gen_audio(text, voice, out):
@@ -74,18 +77,20 @@ jobs:
           audio = AudioFileClip('voiceover.mp3')
           dur = audio.duration
 
-          # 5. Process clips to 9:16
+          # 5. Process clips to 9:16 (simple crop + resize)
           processed = []
           for cp in clip_paths:
               c = VideoFileClip(cp)
-              ratio = 9/16
-              if c.w/c.h > ratio:
-                  nw = int(c.h * ratio)
-                  c = c.crop(x1=(c.w-nw)//2, width=nw)
+              # Simple center crop to 9:16
+              target_w, target_h = 1080, 1920
+              ratio = target_w / target_h
+              if c.w / c.h > ratio:
+                  new_w = int(c.h * ratio)
+                  c = c.crop(x1=(c.w - new_w)//2, width=new_w, height=c.h)
               else:
-                  nh = int(c.w / ratio)
-                  c = c.crop(y1=(c.h-nh)//2, height=nh)
-              c = c.resize(height=1920)
+                  new_h = int(c.w / ratio)
+                  c = c.crop(y1=(c.h - new_h)//2, width=c.w, height=new_h)
+              c = c.resize((target_w, target_h))
               processed.append(c)
 
           # 6. Loop clips to match audio
@@ -111,7 +116,7 @@ jobs:
 
           final = CompositeVideoClip([video] + subs)
           os.makedirs('output', exist_ok=True)
-          final.write_videofile('output/final_video.mp4', codec='libx264', audio_codec='aac', fps=30)
+          final.write_videofile('output/final_video.mp4', codec='libx264', audio_codec='aac', fps=30, logger=None)
           print('✅ Done: output/final_video.mp4')
           PYTHON_SCRIPT
 
