@@ -1,4 +1,4 @@
-name: 🎬 Full Vertical Video (Stocks + Voice) - NO IMAGEMAGICK
+name: 🎬 Full Vertical Video (Stocks + Voice) - 45 SEC
 
 on:
   workflow_dispatch:
@@ -38,7 +38,7 @@ jobs:
           sudo apt-get install -y ffmpeg
           pip install requests "moviepy==1.0.3" "Pillow==9.5.0" edge-tts
 
-      - name: 🎬 Generate video (Stocks + Voice, NO subtitles)
+      - name: 🎬 Generate video (45 sec, Stocks + Voice)
         env:
           PEXELS_KEY: ${{ secrets.PEXELS_API_KEY }}
           TOPIC: ${{ github.event.inputs.topic }}
@@ -53,8 +53,18 @@ jobs:
           VOICE = os.environ['VOICE']
           PEXELS_KEY = os.environ['PEXELS_KEY']
 
-          # 1. Script for voiceover
-          script = f"{TOPIC}. No internet. Zero RAM. Full privacy. Free 48 hours."
+          # 1. FULL SCRIPT (~45 seconds, ~90 words)
+          script = f"""{TOPIC}. 
+          They work only on your computer. No internet required. 
+          No cloud. No tracking. Zero RAM when idle. 
+          They sleep in a file. Wake up on command. 
+          Do the task. Save the result. Go back to sleep. 
+          I released a starter pack. Twenty ready-made agents. 
+          Just unpack and test on your data. 
+          The archive is free, but access is open for exactly forty-eight hours. 
+          Then I will close it. 
+          Link: boosty.to/researcher. 
+          Subscribe to the channel. Next, I will show how the system learns from your feedback."""
 
           # 2. Generate TTS
           async def gen_audio(text, voice, out):
@@ -64,20 +74,21 @@ jobs:
 
           # 3. Fetch stock videos from Pexels
           headers = {'Authorization': PEXELS_KEY}
-          url = f"https://api.pexels.com/videos/search?query={TOPIC.replace(' ', '+')}&per_page=5&orientation=portrait"
+          url = f"https://api.pexels.com/videos/search?query={TOPIC.replace(' ', '+')}&per_page=8&orientation=portrait"
           vids = requests.get(url, headers=headers).json().get('videos', [])
           
           os.makedirs('clips', exist_ok=True)
           clip_paths = []
-          for i, v in enumerate(vids[:4]):
+          for i, v in enumerate(vids[:6]):  # Берём больше клипов для разнообразия
               p = f"clips/clip_{i}.mp4"
               with open(p, 'wb') as f:
                   f.write(requests.get(v['video_files'][0]['link']).content)
               clip_paths.append(p)
 
-          # 4. Load audio
+          # 4. Load audio and get duration
           audio = AudioFileClip('voiceover.mp3')
           dur = audio.duration
+          print(f"🔊 Audio duration: {dur:.2f} seconds")
 
           # 5. Process clips: crop + resize to 9:16 (1080x1920)
           processed = []
@@ -94,22 +105,25 @@ jobs:
               c = c.resize((target_w, target_h))
               processed.append(c)
 
-          # 6. Loop clips to match audio duration
+          # 6. Loop clips to match FULL audio duration
           from itertools import cycle
           final_clips = []
           t = 0
           for clip in cycle(processed):
-              if t >= dur: break
-              d = min(clip.duration, dur - t)
-              final_clips.append(clip.subclip(0, d))
-              t += d
+              if t >= dur: 
+                  break
+              # Берём кусок клипа или весь клип, если он короткий
+              available = min(clip.duration, dur - t)
+              final_clips.append(clip.subclip(0, available))
+              t += available
+              print(f"⏱️ Added clip, total: {t:.2f}/{dur:.2f}s")
 
           video = concatenate_videoclips(final_clips).set_audio(audio)
 
-          # 7. Export (NO subtitles - avoid ImageMagick)
+          # 7. Export
           os.makedirs('output', exist_ok=True)
           video.write_videofile('output/final_video.mp4', codec='libx264', audio_codec='aac', fps=30, logger=None)
-          print('✅ Done: output/final_video.mp4')
+          print(f'✅ Done: output/final_video.mp4 ({dur:.2f} seconds)')
           PYTHON_SCRIPT
 
       - name: 📤 Upload artifact
