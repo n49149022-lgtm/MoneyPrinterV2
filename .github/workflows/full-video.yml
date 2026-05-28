@@ -1,4 +1,4 @@
-name: 🎬 Full Vertical Video (Stocks + Voice + Subtitles)
+name: 🎬 Full Vertical Video (Stocks + Voice) - NO IMAGEMAGICK
 
 on:
   workflow_dispatch:
@@ -32,56 +32,54 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: 🔧 Fix ImageMagick policy
-        run: |
-          sudo sed -i 's/rights="none" pattern="@"/rights="read|write" pattern="@" /g' /etc/ImageMagick-6/policy.xml
-
       - name: ⬇️ Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg imagemagick
+          sudo apt-get install -y ffmpeg
           pip install requests "moviepy==1.0.3" "Pillow==9.5.0" edge-tts
 
-      - name: 🎬 Generate full video
+      - name: 🎬 Generate video (Stocks + Voice, NO subtitles)
         env:
           PEXELS_KEY: ${{ secrets.PEXELS_API_KEY }}
           TOPIC: ${{ github.event.inputs.topic }}
           VOICE: ${{ github.event.inputs.voice }}
         run: |
           python - << 'PYTHON_SCRIPT'
-          import requests, os, asyncio, re
-          from moviepy.editor import VideoFileClip, AudioFileClip, TextClip, CompositeVideoClip, concatenate_videoclips
+          import requests, os, asyncio
+          from moviepy.editor import VideoFileClip, AudioFileClip, concatenate_videoclips
           import edge_tts
 
           TOPIC = os.environ['TOPIC']
           VOICE = os.environ['VOICE']
           PEXELS_KEY = os.environ['PEXELS_KEY']
 
-          # 1. Script
+          # 1. Script for voiceover
           script = f"{TOPIC}. No internet. Zero RAM. Full privacy. Free 48 hours."
 
-          # 2. TTS
+          # 2. Generate TTS
           async def gen_audio(text, voice, out):
               comm = edge_tts.Communicate(text, voice)
               await comm.save(out)
           asyncio.run(gen_audio(script, VOICE, 'voiceover.mp3'))
 
-          # 3. Pexels
+          # 3. Fetch stock videos from Pexels
           headers = {'Authorization': PEXELS_KEY}
           url = f"https://api.pexels.com/videos/search?query={TOPIC.replace(' ', '+')}&per_page=5&orientation=portrait"
           vids = requests.get(url, headers=headers).json().get('videos', [])
+          
           os.makedirs('clips', exist_ok=True)
           clip_paths = []
           for i, v in enumerate(vids[:4]):
               p = f"clips/clip_{i}.mp4"
-              with open(p, 'wb') as f: f.write(requests.get(v['video_files'][0]['link']).content)
+              with open(p, 'wb') as f:
+                  f.write(requests.get(v['video_files'][0]['link']).content)
               clip_paths.append(p)
 
-          # 4. Audio duration
+          # 4. Load audio
           audio = AudioFileClip('voiceover.mp3')
           dur = audio.duration
 
-          # 5. Process clips to 9:16
+          # 5. Process clips: crop + resize to 9:16 (1080x1920)
           processed = []
           for cp in clip_paths:
               c = VideoFileClip(cp)
@@ -96,7 +94,7 @@ jobs:
               c = c.resize((target_w, target_h))
               processed.append(c)
 
-          # 6. Loop clips to match audio
+          # 6. Loop clips to match audio duration
           from itertools import cycle
           final_clips = []
           t = 0
@@ -108,27 +106,9 @@ jobs:
 
           video = concatenate_videoclips(final_clips).set_audio(audio)
 
-          # 7. Subtitles (simple, safe for ImageMagick)
-          lines = [l.strip() for l in re.split(r'[.!?]', script) if l.strip()]
-          line_dur = dur / len(lines) if lines else 3
-          subs = []
-          for i, line in enumerate(lines):
-              txt = TextClip(
-                  line,
-                  fontsize=40,
-                  color='white',
-                  font='Arial-Bold',
-                  stroke_color='black',
-                  stroke_width=1.5,
-                  size=(900, None),
-                  method='caption'
-              )
-              txt = txt.set_pos(('center', 1600)).set_start(i * line_dur).set_duration(line_dur)
-              subs.append(txt)
-
-          final = CompositeVideoClip([video] + subs)
+          # 7. Export (NO subtitles - avoid ImageMagick)
           os.makedirs('output', exist_ok=True)
-          final.write_videofile('output/final_video.mp4', codec='libx264', audio_codec='aac', fps=30, logger=None)
+          video.write_videofile('output/final_video.mp4', codec='libx264', audio_codec='aac', fps=30, logger=None)
           print('✅ Done: output/final_video.mp4')
           PYTHON_SCRIPT
 
