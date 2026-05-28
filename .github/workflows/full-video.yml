@@ -1,21 +1,20 @@
-name: 🎬 Full Vertical Video (Stocks + Voice) - 45 SEC
+name: 🎬 Full Vertical Video (RU Female Voice + Stocks) - 45 SEC
 
 on:
   workflow_dispatch:
     inputs:
       topic:
-        description: 'Topic for video'
+        description: 'Тема видео'
         required: true
-        default: '20 local AI agents free 48 hours'
+        default: '20 локальных ИИ-агентов бесплатно'
       voice:
-        description: 'Voice'
-        required: true
-        default: 'ru-RU-DmitryNeural'
+        description: 'Голос'
+        required: false
+        default: 'ru-RU-SvetlanaNeural'
         type: choice
         options:
-          - ru-RU-DmitryNeural
           - ru-RU-SvetlanaNeural
-          - en-US-JennyNeural
+          - ru-RU-DmitryNeural
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -38,7 +37,7 @@ jobs:
           sudo apt-get install -y ffmpeg
           pip install requests "moviepy==1.0.3" "Pillow==9.5.0" edge-tts
 
-      - name: 🎬 Generate video (45 sec, Stocks + Voice)
+      - name: 🎬 Generate video (RU Female Voice + Stocks)
         env:
           PEXELS_KEY: ${{ secrets.PEXELS_API_KEY }}
           TOPIC: ${{ github.event.inputs.topic }}
@@ -53,44 +52,48 @@ jobs:
           VOICE = os.environ['VOICE']
           PEXELS_KEY = os.environ['PEXELS_KEY']
 
-          # 1. FULL SCRIPT (~45 seconds, ~90 words)
+          # 1. FULL RU SCRIPT (~45 seconds)
           script = f"""{TOPIC}. 
-          They work only on your computer. No internet required. 
-          No cloud. No tracking. Zero RAM when idle. 
-          They sleep in a file. Wake up on command. 
-          Do the task. Save the result. Go back to sleep. 
-          I released a starter pack. Twenty ready-made agents. 
-          Just unpack and test on your data. 
-          The archive is free, but access is open for exactly forty-eight hours. 
-          Then I will close it. 
-          Link: boosty.to/researcher. 
-          Subscribe to the channel. Next, I will show how the system learns from your feedback."""
+          Они работают только на твоём компьютере. Без интернета. 
+          Без облаков. Без слежки. Ноль оперативной памяти в покое. 
+          Пока не нужны — спят в обычном файле. 
+          Запустил — выполнил задачу — сохранил результат — и снова тишина. 
+          Я выложила стартовый набор. Двадцать готовых агентов. 
+          Просто распакуй и проверь на своих данных. 
+          Архив бесплатный, но доступ открыт ровно на сорок восемь часов. 
+          Потом закрою. 
+          Ссылка: бусти точка то слэш исследователь. 
+          Подпишись на канал. Дальше покажу, как система учится на твоём фидбеке."""
 
           # 2. Generate TTS
           async def gen_audio(text, voice, out):
               comm = edge_tts.Communicate(text, voice)
               await comm.save(out)
+          
           asyncio.run(gen_audio(script, VOICE, 'voiceover.mp3'))
+          print(f"🔊 Generated audio with voice: {VOICE}")
 
           # 3. Fetch stock videos from Pexels
           headers = {'Authorization': PEXELS_KEY}
-          url = f"https://api.pexels.com/videos/search?query={TOPIC.replace(' ', '+')}&per_page=8&orientation=portrait"
+          search_query = "artificial intelligence technology automation cyberpunk digital".replace(' ', '+')
+          url = f"https://api.pexels.com/videos/search?query={search_query}&per_page=8&orientation=portrait"
           vids = requests.get(url, headers=headers).json().get('videos', [])
           
           os.makedirs('clips', exist_ok=True)
           clip_paths = []
-          for i, v in enumerate(vids[:6]):  # Берём больше клипов для разнообразия
+          for i, v in enumerate(vids[:6]):
               p = f"clips/clip_{i}.mp4"
               with open(p, 'wb') as f:
                   f.write(requests.get(v['video_files'][0]['link']).content)
               clip_paths.append(p)
+          print(f"🎬 Downloaded {len(clip_paths)} stock clips")
 
-          # 4. Load audio and get duration
+          # 4. Load audio
           audio = AudioFileClip('voiceover.mp3')
           dur = audio.duration
-          print(f"🔊 Audio duration: {dur:.2f} seconds")
+          print(f"⏱️ Audio duration: {dur:.2f} seconds")
 
-          # 5. Process clips: crop + resize to 9:16 (1080x1920)
+          # 5. Process clips to 9:16
           processed = []
           for cp in clip_paths:
               c = VideoFileClip(cp)
@@ -105,18 +108,15 @@ jobs:
               c = c.resize((target_w, target_h))
               processed.append(c)
 
-          # 6. Loop clips to match FULL audio duration
+          # 6. Loop clips to match audio
           from itertools import cycle
           final_clips = []
           t = 0
           for clip in cycle(processed):
-              if t >= dur: 
-                  break
-              # Берём кусок клипа или весь клип, если он короткий
-              available = min(clip.duration, dur - t)
-              final_clips.append(clip.subclip(0, available))
-              t += available
-              print(f"⏱️ Added clip, total: {t:.2f}/{dur:.2f}s")
+              if t >= dur: break
+              d = min(clip.duration, dur - t)
+              final_clips.append(clip.subclip(0, d))
+              t += d
 
           video = concatenate_videoclips(final_clips).set_audio(audio)
 
