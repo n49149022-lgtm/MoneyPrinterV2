@@ -1,4 +1,4 @@
-name: 🎬 Full Vertical Video (Stocks + Voice + Subtitles)
+name:  Full Vertical Video (Stocks + Voice + Subtitles)
 
 on:
   workflow_dispatch:
@@ -33,7 +33,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg imagemagick
-          pip install requests moviepy edge-tts
+          pip install requests "moviepy==1.0.3" edge-tts Pillow
 
       - name: 🎬 Generate full video
         env:
@@ -42,92 +42,77 @@ jobs:
           VOICE: ${{ github.event.inputs.voice }}
         run: |
           python - << 'PYTHON_SCRIPT'
-          import requests, os, subprocess, json, re
-          from moviepy.editor import *
-          import edge_tts, asyncio
-          
+          import requests, os, asyncio, re
+          from moviepy.editor import VideoFileClip, AudioFileClip, TextClip, CompositeVideoClip, concatenate_videoclips
+          import edge_tts
+
           TOPIC = os.environ['TOPIC']
           VOICE = os.environ['VOICE']
           PEXELS_KEY = os.environ['PEXELS_KEY']
-          
-          # 1. Generate script (simple template)
-          script = f"""{TOPIC}. No internet required. Zero RAM when idle. Complete privacy. Free for 48 hours. Get it now."""
-          
-          # 2. Generate TTS voiceover
-          async def generate_audio(text, voice, output):
-              communicate = edge_tts.Communicate(text, voice)
-              await communicate.save(output)
-          asyncio.run(generate_audio(script, VOICE, 'voiceover.mp3'))
-          
-          # 3. Get stock videos from Pexels
+
+          # 1. Script
+          script = f"{TOPIC}. No internet required. Zero RAM when idle. Complete privacy. Free for 48 hours. Get it now."
+
+          # 2. TTS
+          async def gen_audio(text, voice, out):
+              comm = edge_tts.Communicate(text, voice)
+              await comm.save(out)
+          asyncio.run(gen_audio(script, VOICE, 'voiceover.mp3'))
+
+          # 3. Pexels
           headers = {'Authorization': PEXELS_KEY}
-          query = TOPIC.replace(' ', '+')
-          url = f'https://api.pexels.com/videos/search?query={query}&per_page=5&orientation=portrait'
-          r = requests.get(url, headers=headers)
-          videos = r.json().get('videos', [])
-          
+          url = f"https://api.pexels.com/videos/search?query={TOPIC.replace(' ', '+')}&per_page=5&orientation=portrait"
+          vids = requests.get(url, headers=headers).json().get('videos', [])
           os.makedirs('clips', exist_ok=True)
-          clip_files = []
-          for i, v in enumerate(videos[:4]):
-              video_url = v['video_files'][0]['link']
-              clip_path = f'clips/clip_{i}.mp4'
-              with open(clip_path, 'wb') as f:
-                  f.write(requests.get(video_url).content)
-              clip_files.append(clip_path)
-          
-          # 4. Get audio duration
-          audio_clip = AudioFileClip('voiceover.mp3')
-          audio_duration = audio_clip.duration
-          
-          # 5. Prepare clips: resize + crop to 9:16
-          processed_clips = []
-          for clip_path in clip_files:
-              clip = VideoFileClip(clip_path)
-              # Crop to 9:16 (1080x1920)
-              target_ratio = 9/16
-              if clip.w/clip.h > target_ratio:
-                  new_w = int(clip.h * target_ratio)
-                  clip = clip.crop(x1=(clip.w-new_w)//2, width=new_w)
+          clip_paths = []
+          for i, v in enumerate(vids[:4]):
+              p = f"clips/clip_{i}.mp4"
+              with open(p, 'wb') as f: f.write(requests.get(v['video_files'][0]['link']).content)
+              clip_paths.append(p)
+
+          # 4. Audio duration
+          audio = AudioFileClip('voiceover.mp3')
+          dur = audio.duration
+
+          # 5. Process clips to 9:16
+          processed = []
+          for cp in clip_paths:
+              c = VideoFileClip(cp)
+              ratio = 9/16
+              if c.w/c.h > ratio:
+                  nw = int(c.h * ratio)
+                  c = c.crop(x1=(c.w-nw)//2, width=nw)
               else:
-                  new_h = int(clip.w / target_ratio)
-                  clip = clip.crop(y1=(clip.h-new_h)//2, height=new_h)
-              clip = clip.resize(height=1920)
-              processed_clips.append(clip)
-          
-          # 6. Concatenate clips to match audio duration
+                  nh = int(c.w / ratio)
+                  c = c.crop(y1=(c.h-nh)//2, height=nh)
+              c = c.resize(height=1920)
+              processed.append(c)
+
+          # 6. Loop clips to match audio
           from itertools import cycle
           final_clips = []
-          current_time = 0
-          for clip in cycle(processed_clips):
-              if current_time >= audio_duration:
-                  break
-              duration = min(clip.duration, audio_duration - current_time)
-              final_clips.append(clip.subclip(0, duration))
-              current_time += duration
-          
-          final_video = concatenate_videoclips(final_clips)
-          final_video = final_video.set_audio(audio_clip)
-          
-          # 7. Add subtitles (simple: split script into lines)
-          from moviepy.video.fx.all import crop
-          lines = re.split(r'[.!?]', script)
-          lines = [l.strip() for l in lines if l.strip()]
-          
-          # Create subtitle clips
-          subtitle_clips = []
-          line_duration = audio_duration / len(lines) if lines else 3
+          t = 0
+          for clip in cycle(processed):
+              if t >= dur: break
+              d = min(clip.duration, dur - t)
+              final_clips.append(clip.subclip(0, d))
+              t += d
+
+          video = concatenate_videoclips(final_clips).set_audio(audio)
+
+          # 7. Subtitles
+          lines = [l.strip() for l in re.split(r'[.!?]', script) if l.strip()]
+          line_dur = dur / len(lines) if lines else 3
+          subs = []
           for i, line in enumerate(lines):
-              if not line: continue
-              txt_clip = TextClip(line, fontsize=40, color='white', font='Arial-Bold', stroke_color='black', stroke_width=2, size=(900, None), method='caption')
-              txt_clip = txt_clip.set_pos(('center', 1600)).set_start(i * line_duration).set_duration(line_duration)
-              subtitle_clips.append(txt_clip)
-          
-          final_with_subs = CompositeVideoClip([final_video] + subtitle_clips)
-          
-          # 8. Export
+              txt = TextClip(line, fontsize=40, color='white', font='Arial-Bold', stroke_color='black', stroke_width=2, size=(900, None), method='caption')
+              txt = txt.set_pos(('center', 1600)).set_start(i * line_dur).set_duration(line_dur)
+              subs.append(txt)
+
+          final = CompositeVideoClip([video] + subs)
           os.makedirs('output', exist_ok=True)
-          final_with_subs.write_videofile('output/final_video.mp4', codec='libx264', audio_codec='aac', fps=30)
-          print('✅ Full video created: output/final_video.mp4')
+          final.write_videofile('output/final_video.mp4', codec='libx264', audio_codec='aac', fps=30)
+          print('✅ Done: output/final_video.mp4')
           PYTHON_SCRIPT
 
       - name: 📤 Upload artifact
