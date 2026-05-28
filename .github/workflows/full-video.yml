@@ -1,12 +1,16 @@
-name: 🎬 Full Vertical Video (RU Female Voice + Stocks) - 45 SEC
+name: 🎬 Full Vertical Video (RU Female Voice + Stocks) - CUSTOM TEXT
 
 on:
   workflow_dispatch:
     inputs:
       topic:
-        description: 'Тема видео'
+        description: 'Тема для поиска стоков'
         required: true
-        default: '20 локальных ИИ-агентов бесплатно'
+        default: 'AI technology'
+      script:
+        description: 'Текст озвучки (на русском)'
+        required: true
+        default: '20 локальных ИИ-агентов бесплатно. Они работают только на твоём компьютере. Без интернета. Без облаков. Без слежки. Ноль оперативной памяти в покое. Пока не нужны — спят в файле. Запустил — выполнил задачу — сохранил результат — и снова тишина. Я выложила стартовый набор. Двадцать готовых агентов. Просто распакуй и проверь. Архив бесплатный, но доступ открыт ровно на сорок восемь часов. Потом закрою. Ссылка: бусти точка то слэш исследователь. Подпишись на канал.'
       voice:
         description: 'Голос'
         required: false
@@ -37,10 +41,11 @@ jobs:
           sudo apt-get install -y ffmpeg
           pip install requests "moviepy==1.0.3" "Pillow==9.5.0" edge-tts
 
-      - name: 🎬 Generate video (RU Female Voice + Stocks)
+      - name: 🎬 Generate video (Custom script + voice)
         env:
           PEXELS_KEY: ${{ secrets.PEXELS_API_KEY }}
           TOPIC: ${{ github.event.inputs.topic }}
+          SCRIPT: ${{ github.event.inputs.script }}
           VOICE: ${{ github.event.inputs.voice }}
         run: |
           python - << 'PYTHON_SCRIPT'
@@ -49,21 +54,12 @@ jobs:
           import edge_tts
 
           TOPIC = os.environ['TOPIC']
+          SCRIPT = os.environ['SCRIPT']
           VOICE = os.environ['VOICE']
           PEXELS_KEY = os.environ['PEXELS_KEY']
 
-          # 1. FULL RU SCRIPT (~45 seconds)
-          script = f"""{TOPIC}. 
-          Они работают только на твоём компьютере. Без интернета. 
-          Без облаков. Без слежки. Ноль оперативной памяти в покое. 
-          Пока не нужны — спят в обычном файле. 
-          Запустил — выполнил задачу — сохранил результат — и снова тишина. 
-          Я выложила стартовый набор. Двадцать готовых агентов. 
-          Просто распакуй и проверь на своих данных. 
-          Архив бесплатный, но доступ открыт ровно на сорок восемь часов. 
-          Потом закрою. 
-          Ссылка: бусти точка то слэш исследователь. 
-          Подпишись на канал. Дальше покажу, как система учится на твоём фидбеке."""
+          # 1. Use custom script from input
+          script = SCRIPT
 
           # 2. Generate TTS
           async def gen_audio(text, voice, out):
@@ -73,10 +69,9 @@ jobs:
           asyncio.run(gen_audio(script, VOICE, 'voiceover.mp3'))
           print(f"🔊 Generated audio with voice: {VOICE}")
 
-          # 3. Fetch stock videos from Pexels
+          # 3. Fetch stock videos
           headers = {'Authorization': PEXELS_KEY}
-          search_query = "artificial intelligence technology automation cyberpunk digital".replace(' ', '+')
-          url = f"https://api.pexels.com/videos/search?query={search_query}&per_page=8&orientation=portrait"
+          url = f"https://api.pexels.com/videos/search?query={TOPIC.replace(' ', '+')}&per_page=8&orientation=portrait"
           vids = requests.get(url, headers=headers).json().get('videos', [])
           
           os.makedirs('clips', exist_ok=True)
